@@ -3,3 +3,4 @@ langchain-openai
 langchain-chroma
 langgraph
 typing-extensions
+pysqlite3-binary
