@@ -145,7 +145,7 @@ def main():
             st.error("Please enter a valid legal clause.")
         else:
             with st.spinner("Processing..."):
-                response = rag(user_clause, texts=texts, k=k)
+                response = rag(user_clause, texts=None, k=k)
             
             st.subheader("Generated Clustering Answer")
             st.write(response["answer"])
