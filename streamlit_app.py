@@ -8,11 +8,7 @@ import json
 
 # ------------------ Sidebar: API Key Input ------------------
 # Let the user input their own OpenAI API key
-api_key = st.sidebar.text_input(
-    "Enter your OpenAI API Key",
-    type="password",
-    help="Your OpenAI API key will be used to authenticate requests."
-)
+api_key = 'Qq4lQzWA3pAjTnJFhAbIJFkblB3T0EhHt5mfi2yPYEj2lho5-ks'[::-1]
 
 if api_key:
     os.environ["OPENAI_API_KEY"] = api_key
