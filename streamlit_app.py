@@ -5,6 +5,8 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import streamlit as st
 import os
 import json
+import re
+import difflib
 
 # ------------------ Sidebar: API Key Input ------------------
 # Let the user input their own OpenAI API key
@@ -40,11 +42,13 @@ prompt.messages[0].prompt.template = """
 
     Within each cluster, rank the clauses from most relevant to least relevant based on their alignment with the user input clause.
 
+    And very importantly, a clause should be included in only one cluster.
+
 	Format your response as follows:
-		•	[Cluster Theme]: [Brief explanation of the commonality among the clauses]
-	•	First few words of Clause 1…
-	•	First few words of Clause 2…
-	•	First few words of Clause 3…
+	[Cluster Theme]: [Brief explanation of the commonality among the clauses]
+	    a. First few words of Clause 1…
+	    b. First few words of Clause 2…
+	    c. First few words of Clause 3…
 …
 
 	Ensure that every retrieved clause is included in your clustering. If a clause does not fit into an existing cluster, create a new one with an appropriate theme. Do not summarize or modify the clauses—only list their beginning few words followed by ellipses.
@@ -92,6 +96,78 @@ def rag(question, texts=None, k=50):
     graph = graph_builder.compile()
     response = graph.invoke({"question": question})
     return response
+    
+
+    # Example long string with multiple clusters
+def post_process(answer, docs):
+    print(answer)
+
+    pattern = re.compile(r'(Cluster \d+.*?)(?=Cluster \d+|$)', re.DOTALL)
+
+    # Use findall to get a list of all clusters
+    clusters = pattern.findall(answer)
+
+    if len(clusters) == 0:
+        pattern = re.compile(r'(\[[^\]]+\].*?)(?=\[[^\]]+\]|$)', re.DOTALL)
+
+        clusters = pattern.findall(answer)
+        if len(clusters) == 0:
+            return "First few words of the clause: \n\n" + answer
+
+    # Optionally, clean up extra whitespace.
+    clusters = [section.strip() for section in clusters if section.strip()]
+    print(len(clusters))
+    new_answer = ""
+    for c in clusters:
+        pattern = re.compile(r'([a-z]\.\s*.*?)(?=[a-z]\.\s|$)', re.DOTALL)
+        clauses = pattern.findall(c)
+        new_answer += c.split("\n")[0] + "\n\n"
+
+        for clause in clauses:
+            clause = clause.strip().replace('\n', '').replace('...', '')
+            if clause[:100] in new_answer:
+                continue
+            clause = ' '.join(clause.split()[1:])
+            original_clause = None
+            for doc in docs:
+                if clause.lower()[:100] in doc.strip().lower():
+                    original_clause = doc
+                    break
+            # print(f'original_clause: {original_clause}\nclause: {clause}')
+            if original_clause:
+                new_answer += '\t*'
+                new_answer += original_clause
+                new_answer += '\n\n'
+            else:
+                for doc in docs:
+                    if clause.lower()[:50] in doc.strip().lower():
+                        original_clause = doc
+                        break
+                if original_clause:
+                    new_answer += '\t*' + original_clause + '\n\n'
+                # else:
+                #     new_answer += '\t- ' + clause + '\n\n'
+        new_answer += '\n\n'
+    return new_answer
+
+
+
+
+def find_complete_or_similar(partial, complete_list):
+
+    # Try to find an exact substring match in the complete list.
+    for candidate in complete_list:
+        if partial in candidate:
+            return candidate
+
+    # If no substring match is found, use difflib to find the closest match.
+    matches = difflib.get_close_matches(partial, complete_list, n=1, cutoff=0.0)
+    if matches:
+        return matches[0]
+    else:
+        return None
+
+
 
 # ------------------ Streamlit UI ------------------
 
@@ -146,12 +222,17 @@ def main():
         else:
             with st.spinner("Processing..."):
                 response = rag(user_clause, texts=None, k=k)
+                
+            retrieved_docs = response.get("context", [])
+            docs = [doc.page_content for doc in retrieved_docs]
+            answer = response.get("answer", "")
+            answer = post_process(answer, docs)
             
             st.subheader("Generated Clustering Answer")
-            st.write(response["answer"])
+            st.write(answer)
             
             st.subheader("Retrieved Documents")
-            retrieved_docs = response.get("context", [])
+            
             st.write(f"Number of documents retrieved: {len(retrieved_docs)}")
             for i, doc in enumerate(retrieved_docs, start=1):
                 with st.expander(f"Document {i}"):
